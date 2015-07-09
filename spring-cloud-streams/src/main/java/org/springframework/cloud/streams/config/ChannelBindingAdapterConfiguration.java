@@ -25,6 +25,7 @@ import java.util.Set;
 
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
+
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.aop.target.LazyInitTargetSource;
 import org.springframework.beans.factory.BeanFactoryUtils;
@@ -37,6 +38,10 @@ import org.springframework.cloud.streams.adapter.Input;
 import org.springframework.cloud.streams.adapter.InputChannelBinding;
 import org.springframework.cloud.streams.adapter.Output;
 import org.springframework.cloud.streams.adapter.OutputChannelBinding;
+import org.springframework.xd.dirt.integration.bus.serializer.MultiTypeCodec;
+import org.springframework.xd.dirt.integration.bus.serializer.kryo.FileKryoRegistrar;
+import org.springframework.xd.dirt.integration.bus.serializer.kryo.KryoRegistrar;
+import org.springframework.xd.dirt.integration.bus.serializer.kryo.PojoCodec;
 import org.springframework.cloud.streams.endpoint.ChannelsEndpoint;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -51,11 +56,16 @@ import org.springframework.xd.dirt.integration.bus.serializer.kryo.KryoRegistrar
 import org.springframework.xd.dirt.integration.bus.serializer.kryo.PojoCodec;
 
 
+
 /**
  * @author Dave Syer
  * @author David Turanski
  */
 @Configuration
+<<<<<<< HEAD
+=======
+
+>>>>>>> XD-3242 created spring-cloud-streams-codec
 public class ChannelBindingAdapterConfiguration {
 
 	@Autowired
@@ -169,15 +179,22 @@ public class ChannelBindingAdapterConfiguration {
 
 	}
 
-	@Configuration
+	@ConditionalOnMissingBean(ChannelBindingProperties.class)
+	protected static class ModulePropertiesConfiguration {
+		@Bean(name = "spring.cloud.channels.CONFIGURATION_PROPERTIES")
+		public ChannelBindingProperties moduleProperties() {
+			return new ChannelBindingProperties();
+		}
+	}
+
 	protected static class CodecConfiguration {
 		@Autowired
 		ApplicationContext applicationContext;
 
 		@Bean
 		@ConditionalOnMissingBean(name = "codec")
-		public MultiTypeCodec<?> codec() {
-			Map<String, KryoRegistrar> kryoRegistrarMap = this.applicationContext.getBeansOfType(KryoRegistrar
+		public MultiTypeCodec codec() {
+			Map<String, KryoRegistrar> kryoRegistrarMap = applicationContext.getBeansOfType(KryoRegistrar
 					.class);
 			return new PojoCodec(new ArrayList<>(kryoRegistrarMap.values()));
 		}
@@ -187,5 +204,4 @@ public class ChannelBindingAdapterConfiguration {
 			return new FileKryoRegistrar();
 		}
 	}
-
 }
