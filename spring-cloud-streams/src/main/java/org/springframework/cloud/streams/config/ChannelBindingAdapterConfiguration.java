@@ -38,10 +38,6 @@ import org.springframework.cloud.streams.adapter.Input;
 import org.springframework.cloud.streams.adapter.InputChannelBinding;
 import org.springframework.cloud.streams.adapter.Output;
 import org.springframework.cloud.streams.adapter.OutputChannelBinding;
-import org.springframework.xd.dirt.integration.bus.serializer.MultiTypeCodec;
-import org.springframework.xd.dirt.integration.bus.serializer.kryo.FileKryoRegistrar;
-import org.springframework.xd.dirt.integration.bus.serializer.kryo.KryoRegistrar;
-import org.springframework.xd.dirt.integration.bus.serializer.kryo.PojoCodec;
 import org.springframework.cloud.streams.endpoint.ChannelsEndpoint;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -54,8 +50,6 @@ import org.springframework.xd.dirt.integration.bus.serializer.MultiTypeCodec;
 import org.springframework.xd.dirt.integration.bus.serializer.kryo.FileKryoRegistrar;
 import org.springframework.xd.dirt.integration.bus.serializer.kryo.KryoRegistrar;
 import org.springframework.xd.dirt.integration.bus.serializer.kryo.PojoCodec;
-
-
 
 /**
  * @author Dave Syer
@@ -189,7 +183,7 @@ public class ChannelBindingAdapterConfiguration {
 
 		@Bean
 		@ConditionalOnMissingBean(name = "codec")
-		public MultiTypeCodec codec() {
+		public MultiTypeCodec<?> codec() {
 			Map<String, KryoRegistrar> kryoRegistrarMap = applicationContext.getBeansOfType(KryoRegistrar
 					.class);
 			return new PojoCodec(new ArrayList<>(kryoRegistrarMap.values()));
