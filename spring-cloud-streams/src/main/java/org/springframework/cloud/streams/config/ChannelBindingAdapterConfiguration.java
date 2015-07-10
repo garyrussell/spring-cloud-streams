@@ -62,10 +62,6 @@ import org.springframework.xd.dirt.integration.bus.serializer.kryo.PojoCodec;
  * @author David Turanski
  */
 @Configuration
-<<<<<<< HEAD
-=======
-
->>>>>>> XD-3242 created spring-cloud-streams-codec
 public class ChannelBindingAdapterConfiguration {
 
 	@Autowired
