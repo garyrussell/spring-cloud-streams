@@ -17,9 +17,9 @@
 	</parent>
 	<modules>
 		<module>source</module>
+		<module>source-xml</module>
 		<module>sink</module>
 		<module>tap</module>
-		<module>source-xml</module>
 	</modules>
 	<build>
       <pluginManagement>
