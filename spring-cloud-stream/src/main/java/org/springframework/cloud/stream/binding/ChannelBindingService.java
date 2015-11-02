@@ -55,9 +55,9 @@ import org.springframework.util.StringUtils;
  */
 public class ChannelBindingService implements InitializingBean {
 
-	private Binder<MessageChannel> binder;
+	private final Binder<MessageChannel> binder;
 
-	private ChannelBindingServiceProperties channelBindingServiceProperties;
+	private final ChannelBindingServiceProperties channelBindingServiceProperties;
 
 	private CompositeMessageConverterFactory messageConverterFactory;
 
@@ -107,7 +107,7 @@ public class ChannelBindingService implements InitializingBean {
 
 	private boolean isChannelPubSub(String bindingTarget) {
 		Assert.isTrue(StringUtils.hasText(bindingTarget), "Binding target should not be empty/null.");
-		return bindingTarget.startsWith("topic:");
+		return bindingTarget.startsWith("topic:") || bindingTarget.startsWith("tap:");
 	}
 
 	private String removePrefix(String bindingTarget) {

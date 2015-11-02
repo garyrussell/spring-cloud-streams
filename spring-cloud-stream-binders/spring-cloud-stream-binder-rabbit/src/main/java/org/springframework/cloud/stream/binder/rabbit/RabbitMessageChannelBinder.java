@@ -29,6 +29,7 @@ import java.util.Set;
 import org.aopalliance.aop.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -445,6 +446,8 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 		}
 		RabbitPropertiesAccessor accessor = new RabbitPropertiesAccessor(properties);
 		String queueName = applyPrefix(accessor.getPrefix(this.defaultPrefix), name);
+		FanoutExchange exchange = new FanoutExchange(queueName);
+		declareExchangeIfNotPresent(exchange);
 		int partitionIndex = accessor.getPartitionIndex();
 		if (partitionIndex >= 0) {
 			queueName += "-" + partitionIndex;
@@ -453,20 +456,23 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 		Queue queue = new Queue(queueName, true, false, false, args);
 		declareQueueIfNotPresent(queue);
 		autoBindDLQ(name, accessor);
+		org.springframework.amqp.core.Binding binding = BindingBuilder.bind(queue).to(exchange);
+		this.rabbitAdmin.declareBinding(binding);
 		doRegisterConsumer(name, moduleInputChannel, queue, accessor, false);
 		bindExistingProducerDirectlyIfPossible(name, moduleInputChannel);
 	}
 
 	@Override
-	public void bindPubSubConsumer(String name, MessageChannel moduleInputChannel, Properties properties) {
-		String exchangeName = BinderUtils.removeGroupFromPubSub(name);
+	public void bindPubSubConsumer(String exchangeName, MessageChannel moduleInputChannel, String group,
+			Properties properties) {
+		String name = BinderUtils.groupedName(exchangeName, group);
 		if (this.logger.isInfoEnabled()) {
 			this.logger.info("declaring pubsub for inbound: " + name + ", bound to: " + exchangeName);
 		}
 		RabbitPropertiesAccessor accessor = new RabbitPropertiesAccessor(properties);
 		validateConsumerProperties(name, properties, SUPPORTED_PUBSUB_CONSUMER_PROPERTIES);
 		String prefix = accessor.getPrefix(this.defaultPrefix);
-		FanoutExchange exchange = new FanoutExchange(applyPrefix(prefix, applyPubSub(exchangeName)));
+		FanoutExchange exchange = new FanoutExchange(applyPrefix(prefix, exchangeName));
 		declareExchangeIfNotPresent(exchange);
 		Queue queue;
 		boolean durable = accessor.isDurable(this.defaultDurableSubscription);
@@ -481,18 +487,23 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 		declareQueueIfNotPresent(queue);
 		org.springframework.amqp.core.Binding binding = BindingBuilder.bind(queue).to(exchange);
 		this.rabbitAdmin.declareBinding(binding);
-		// register with context so they will be redeclared after a connection failure
-		if (!this.autoDeclareContext.containsBean(applyPubSub(name))) {
-			this.autoDeclareContext.getBeanFactory().registerSingleton(applyPubSub(name), queue);
+		// register with context so they will be redeclared after a connection failure if auto-delete
+		if (!durable && !this.autoDeclareContext.containsBean(name)) {
+			this.autoDeclareContext.getBeanFactory().registerSingleton(name, queue);
 		}
 		String bindingBeanName = exchange.getName() + "." + queue.getName() + ".binding";
-		if (!this.autoDeclareContext.containsBean(bindingBeanName)) {
+		if (!durable && !this.autoDeclareContext.containsBean(bindingBeanName)) {
 			this.autoDeclareContext.getBeanFactory().registerSingleton(bindingBeanName, binding);
 		}
 		doRegisterConsumer(name, moduleInputChannel, queue, accessor, true);
 		if (durable) {
 			autoBindDLQ(name, accessor);
 		}
+	}
+
+	@Override
+	public void bindPubSubConsumer(String name, MessageChannel moduleInputChannel, Properties properties) {
+		bindPubSubConsumer(name, moduleInputChannel, null, properties);
 	}
 
 	private Map<String, Object> queueArgs(RabbitPropertiesAccessor accessor, String queueName) {
@@ -610,24 +621,35 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 
 	private AmqpOutboundEndpoint buildOutboundEndpoint(final String name, RabbitPropertiesAccessor properties,
 			RabbitTemplate rabbitTemplate) {
-		String queueName = applyPrefix(properties.getPrefix(this.defaultPrefix), name);
+		String prefix = properties.getPrefix(this.defaultPrefix);
+		String queueName = applyPrefix(prefix, name);
 		String partitionKeyExtractorClass = properties.getPartitionKeyExtractorClass();
 		Expression partitionKeyExpression = properties.getPartitionKeyExpression();
-		AmqpOutboundEndpoint queue = new AmqpOutboundEndpoint(rabbitTemplate);
+		AmqpOutboundEndpoint endpoint = new AmqpOutboundEndpoint(rabbitTemplate);
 		if (partitionKeyExpression == null && !StringUtils.hasText(partitionKeyExtractorClass)) {
-			declareQueueIfNotPresent(new Queue(queueName));
-			queue.setRoutingKey(queueName); // uses default exchange
+			Queue queue = new Queue(queueName);
+			declareQueueIfNotPresent(queue);
+			FanoutExchange exchange = new FanoutExchange(queueName);
+			declareExchangeIfNotPresent(exchange);
+			endpoint.setExchangeName(exchange.getName());
+			org.springframework.amqp.core.Binding binding = BindingBuilder.bind(queue).to(exchange);
+			this.rabbitAdmin.declareBinding(binding);
 		}
 		else {
-			queue.setExpressionRoutingKey(EXPRESSION_PARSER.parseExpression(buildPartitionRoutingExpression
+			endpoint.setExpressionRoutingKey(EXPRESSION_PARSER.parseExpression(buildPartitionRoutingExpression
 					(queueName)));
 			// if the stream is partitioned, create one queue for each target partition
 			for (int i = 0; i < properties.getNextModuleCount(); i++) {
-				this.rabbitAdmin.declareQueue(new Queue(queueName + "-" + i));
+				Queue queue = new Queue(queueName + "-" + i);
+				this.rabbitAdmin.declareQueue(queue);
+				FanoutExchange exchange = new FanoutExchange(queue.getName());
+				declareExchangeIfNotPresent(exchange);
+				org.springframework.amqp.core.Binding binding = BindingBuilder.bind(queue).to(exchange);
+				this.rabbitAdmin.declareBinding(binding);
 			}
 		}
-		configureOutboundHandler(queue, properties);
-		return queue;
+		configureOutboundHandler(endpoint, properties);
+		return endpoint;
 	}
 
 	private void configureOutboundHandler(AmqpOutboundEndpoint handler, RabbitPropertiesAccessor properties) {
@@ -811,22 +833,18 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 		cleanAutoDeclareContext(name);
 	}
 
+	@Override
+	public void unbindPubSubConsumers(String name, String group) {
+		super.unbindPubSubConsumers(name, group);
+		cleanAutoDeclareContext(BinderUtils.groupedName(name, group));
+	}
+
 	private void cleanAutoDeclareContext(String name) {
 		if (this.autoDeclareContext.containsBean(applyPubSub(name))) {
 			ConfigurableListableBeanFactory beanFactory = this.autoDeclareContext.getBeanFactory();
 			if (beanFactory instanceof DefaultListableBeanFactory) {
 				((DefaultListableBeanFactory) beanFactory).destroySingleton(applyPubSub(name));
 			}
-		}
-	}
-
-	@Override
-	public boolean isCapable(Capability capability) {
-		switch (capability) {
-			case DURABLE_PUBSUB:
-				return true;
-			default:
-				return false;
 		}
 	}
 
