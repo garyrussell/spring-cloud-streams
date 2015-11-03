@@ -23,6 +23,7 @@ import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.cloud.stream.binder.Binder;
+import org.springframework.cloud.stream.binder.BinderUtils;
 import org.springframework.cloud.stream.config.BindingProperties;
 import org.springframework.cloud.stream.config.ChannelBindingServiceProperties;
 import org.springframework.cloud.stream.converter.AbstractFromMessageConverter;
@@ -83,9 +84,10 @@ public class ChannelBindingService implements InitializingBean {
 
 	public void bindConsumer(MessageChannel inputChannel, String inputChannelName) {
 		String channelBindingTarget = this.channelBindingServiceProperties.getBindingDestination(inputChannelName);
-		if (isChannelPubSub(channelBindingTarget)) {
+		if (BinderUtils.isChannelPubSub(channelBindingTarget)) {
 			this.binder.bindPubSubConsumer(removePrefix(channelBindingTarget),
-					inputChannel, this.channelBindingServiceProperties.getConsumerProperties(inputChannelName));
+					inputChannel, this.channelBindingServiceProperties.getGroup(),
+					this.channelBindingServiceProperties.getConsumerProperties(inputChannelName));
 		}
 		else {
 			this.binder.bindConsumer(channelBindingTarget, inputChannel,
@@ -95,7 +97,7 @@ public class ChannelBindingService implements InitializingBean {
 
 	public void bindProducer(MessageChannel outputChannel, String outputChannelName) {
 		String channelBindingTarget = this.channelBindingServiceProperties.getBindingDestination(outputChannelName);
-		if (isChannelPubSub(channelBindingTarget)) {
+		if (BinderUtils.isChannelPubSub(channelBindingTarget)) {
 			this.binder.bindPubSubProducer(removePrefix(channelBindingTarget),
 					outputChannel, this.channelBindingServiceProperties.getProducerProperties(outputChannelName));
 		}
@@ -103,11 +105,6 @@ public class ChannelBindingService implements InitializingBean {
 			this.binder.bindProducer(channelBindingTarget, outputChannel,
 					this.channelBindingServiceProperties.getProducerProperties(outputChannelName));
 		}
-	}
-
-	private boolean isChannelPubSub(String bindingTarget) {
-		Assert.isTrue(StringUtils.hasText(bindingTarget), "Binding target should not be empty/null.");
-		return bindingTarget.startsWith("topic:") || bindingTarget.startsWith("tap:");
 	}
 
 	private String removePrefix(String bindingTarget) {
