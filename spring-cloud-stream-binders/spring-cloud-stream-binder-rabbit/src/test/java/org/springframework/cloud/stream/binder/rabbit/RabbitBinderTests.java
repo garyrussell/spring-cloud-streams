@@ -332,6 +332,81 @@ public class RabbitBinderTests extends PartitionCapableBinderTests {
 	}
 
 	@Test
+	public void testAutoBindDLQPartioned() throws Exception {
+		Binder<MessageChannel> binder = getBinder();
+		Properties properties = new Properties();
+		properties.put("prefix", "bindertest.");
+		properties.put("autoBindDLQ", "true");
+		properties.put("maxAttempts", "1"); // disable retry
+		properties.put("requeue", "false");
+		properties.put("partitionIndex", "0");
+		DirectChannel input0 = new DirectChannel();
+		input0.setBeanName("test.input0DLQ");
+		binder.bindConsumer("partDLQ.0", "dlqPartGrp", input0, properties);
+		properties.put("partitionIndex", "1");
+		DirectChannel input1 = new DirectChannel();
+		input1.setBeanName("test.input1DLQ");
+		binder.bindConsumer("partDLQ.0", "dlqPartGrp", input1, properties);
+
+		properties.clear();
+		properties.put("prefix", "bindertest.");
+		properties.put("partitionKeyExtractorClass", "org.springframework.cloud.stream.binder.PartitionTestSupport");
+		properties.put("partitionSelectorClass", "org.springframework.cloud.stream.binder.PartitionTestSupport");
+		properties.put(BinderPropertyKeys.NEXT_MODULE_COUNT, "2");
+		DirectChannel output = new DirectChannel();
+		output.setBeanName("test.output");
+		binder.bindProducer("partDLQ.0", output, properties);
+
+		final CountDownLatch latch0 = new CountDownLatch(1);
+		input0.subscribe(new MessageHandler() {
+
+			@Override
+			public void handleMessage(Message<?> message) throws MessagingException {
+				if (latch0.getCount() <= 0) {
+					throw new RuntimeException("dlq");
+				}
+				latch0.countDown();
+			}
+
+		});
+
+		final CountDownLatch latch1 = new CountDownLatch(1);
+		input1.subscribe(new MessageHandler() {
+
+			@Override
+			public void handleMessage(Message<?> message) throws MessagingException {
+				if (latch1.getCount() <= 0) {
+					throw new RuntimeException("dlq");
+				}
+				latch1.countDown();
+			}
+
+		});
+
+		output.send(new GenericMessage<Integer>(1));
+		assertTrue(latch1.await(10, TimeUnit.SECONDS));
+
+		output.send(new GenericMessage<Integer>(0));
+		assertTrue(latch0.await(10, TimeUnit.SECONDS));
+
+		output.send(new GenericMessage<Integer>(1));
+
+		RabbitTemplate template = new RabbitTemplate(this.rabbitAvailableRule.getResource());
+		template.setReceiveTimeout(10000);
+
+		String streamDLQName = "bindertest.partDLQ.0.dlqPartGrp.dlq";
+
+		org.springframework.amqp.core.Message received = template.receive(streamDLQName);
+		assertNotNull(received);
+		assertEquals(1, received.getMessageProperties().getHeaders().get("partition"));
+
+		output.send(new GenericMessage<Integer>(0));
+		received = template.receive(streamDLQName);
+		assertNotNull(received);
+		assertEquals(0, received.getMessageProperties().getHeaders().get("partition"));
+	}
+
+	@Test
 	public void testAutoBindDLQwithRepublish() throws Exception {
 		// pre-declare the queue with dead-lettering, users can also use a policy
 		RabbitAdmin admin = new RabbitAdmin(this.rabbitAvailableRule.getResource());
