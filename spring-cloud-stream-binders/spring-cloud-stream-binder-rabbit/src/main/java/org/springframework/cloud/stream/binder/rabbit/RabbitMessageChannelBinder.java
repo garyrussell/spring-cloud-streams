@@ -179,6 +179,7 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 			.addAll(SUPPORTED_BASIC_PRODUCER_PROPERTIES)
 			.addAll(PRODUCER_BATCHING_BASIC_PROPERTIES)
 			.addAll(PRODUCER_BATCHING_ADVANCED_PROPERTIES)
+			.add(RabbitPropertiesAccessor.AUTO_BIND_DLQ)
 			.build();
 
 	private static final MessagePropertiesConverter inboundMessagePropertiesConverter =
@@ -545,7 +546,8 @@ public class RabbitMessageChannelBinder extends MessageChannelBinderSupport impl
 			for (int i = 0; i < properties.getNextModuleCount(); i++) {
 				String partitionSuffix = "-" + i;
 				String partitionQueueName = baseQueueName + partitionSuffix;
-				Queue queue = new Queue(partitionQueueName, true, false, false, queueArgs(properties, baseQueueName));
+				Queue queue = new Queue(partitionQueueName, true, false, false,
+						queueArgs(properties, partitionQueueName));
 				declareQueue(queue.getName(), queue);
 				autoBindDLQ(baseQueueName, baseQueueName + partitionSuffix, properties);
 				declareBinding(queue.getName(), BindingBuilder.bind(queue).to(exchange).with(name + partitionSuffix));
